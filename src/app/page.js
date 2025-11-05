@@ -2,15 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Sun, Moon, Bell, LogOut, HelpCircle, Phone, DollarSign, History,
+  Sun, Moon, LogOut, HelpCircle, Phone, DollarSign, History,
   LayoutGrid, Sparkles, Shield, Lock, Search, Clipboard,
-  CheckCircle, Menu, X, User, KeyRound, Trash2, Save, AlertTriangle
+  CheckCircle, X, User, KeyRound, Trash2, Save, AlertTriangle
 } from "lucide-react";
-
-/* ==========================================================================
-   SAFE PREVIEW (no Supabase). It mocks auth + OTP so you can see the UI live.
-   ==========================================================================
-*/
+import { supabase } from "../lib/supabaseClient";
 
 /* ---------------- Theme ---------------- */
 const t = {
@@ -21,7 +17,6 @@ const t = {
   ring: "ring-1 ring-white/10",
   grad: "bg-gradient-to-r from-blue-600 to-indigo-700",
 };
-
 const lightFix = {
   text: "text-slate-800",
   sub: "text-slate-600",
@@ -44,16 +39,12 @@ const Btn = ({ as = "button", variant = "solid", size = "md", className = "", ..
   const Comp = as;
   return <Comp className={`${base} ${variants[variant]} ${sizes[size]} ${className}`} {...props} />;
 };
-
 const Card = ({ className = "", children, light = false }) => (
   <div className={`rounded-3xl shadow-[0_12px_40px_rgba(0,0,0,.20)] ${light ? `${lightFix.panel} ${lightFix.border}` : `${t.panel} ${t.ring}`} ${className}`}>{children}</div>
 );
 const CardContent = ({ className = "", children }) => <div className={`p-6 md:p-7 ${className}`}>{children}</div>;
 const Input = ({ light = false, className = "", ...props }) => (
-  <input
-    {...props}
-    className={`w-full rounded-xl px-3 py-2 text-sm outline-none placeholder:opacity-60 ${light ? "bg-white border border-slate-300 text-slate-900" : "bg-white/5 border border-white/15 text-white"} ${className}`}
-  />
+  <input {...props} className={`w-full rounded-xl px-3 py-2 text-sm outline-none placeholder:opacity-60 ${light ? "bg-white border border-slate-300 text-slate-900" : "bg-white/5 border border-white/15 text-white"} ${className}`} />
 );
 
 /* ---------------- Minimal Dialog ---------------- */
@@ -73,18 +64,15 @@ const DialogTitle = ({ children, className = "" }) => <h3 className={`text-lg fo
 const DialogDescription = ({ children }) => <p className="text-sm opacity-80">{children}</p>;
 const DialogFooter = ({ children, className = "" }) => <div className={`mt-4 flex items-center justify-end gap-2 ${className}`}>{children}</div>;
 
-/* ---------------- Helpers ---------------- */
+/* ---------------- Helpers & Countdown ---------------- */
 const flag = (c = "") => {
   const s = String(c).toLowerCase();
   const map = { us:"🇺🇸", uk:"🇬🇧", gb:"🇬🇧", ng:"🇳🇬", in:"🇮🇳", fr:"🇫🇷", ca:"🇨🇦", de:"🇩🇪", ae:"🇦🇪", jp:"🇯🇵" };
   return map[s] || "🌐";
 };
-
-/* ---------------- Countdown ---------------- */
 function CountdownTimer({ endsAt, dark }) {
   const [left, setLeft] = useState(0);
   const [total, setTotal] = useState(0);
-
   useEffect(() => {
     if (!endsAt) return;
     const end = new Date(endsAt).getTime();
@@ -99,9 +87,7 @@ function CountdownTimer({ endsAt, dark }) {
     }, 250);
     return () => clearInterval(id);
   }, [endsAt]);
-
   const pct = total ? Math.max(0, Math.min(100, Math.round(((total - left) / total) * 100))) : 0;
-
   return (
     <div className={`rounded-2xl p-4 ${dark ? "bg-white/5 border border-white/10" : "bg-slate-50 border border-slate-200"}`}>
       <div className="flex items-center justify-between mb-2">
@@ -120,54 +106,39 @@ function CountdownTimer({ endsAt, dark }) {
   );
 }
 
-/* ---------------- MOCKED Auth + Data ---------------- */
-function useMockAuth() {
-  const [session, setSession] = useState(null);
-  const signIn = (email = "demo@dialpro.app") => setSession({ user: { id: "demo", email }, access_token: "demo" });
-  const signOut = () => setSession(null);
-  return { session, signIn, signOut };
-}
-function useMockMeta() {
-  return {
-    services: [
-      { code: "whatsapp", name: "WhatsApp" },
-      { code: "gmail", name: "Google Gmail" },
-      { code: "yahoo", name: "Yahoo" },
-      { code: "instagram", name: "Instagram" },
-    ],
-    countries: ["US", "UK", "DE", "FR", "CA", "NG"],
-  };
-}
-
-/* Module-level constants to keep deps clean */
-const INITIAL_NOTIFICATIONS = [
-  { id: 1, message: "Deposit of $29 confirmed", time: "1h ago" },
-  { id: 2, message: "Reserved +1-415-550-0123", time: "2h ago" },
-];
-
-/* ---------------- Main Preview Component ---------------- */
-export default function DialProPreview() {
-  // router state
+/* ---------------- Main Component ---------------- */
+export default function DialProApp() {
+  // Router + theme
   const [active, setActive] = useState("landing");
   const [darkMode, setDarkMode] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // mocked auth
-  const { session, signIn, signOut } = useMockAuth();
+  // Real auth via Supabase
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (mounted) setSession(data.session ?? null);
+      setAuthReady(true);
+    })();
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    return () => sub.subscription?.unsubscribe?.();
+  }, []);
 
   // Profile basics for greeting
   const [fullName, setFullName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const displayName = fullName || session?.user?.email?.split("@")[0] || "User";
 
-  // Wallet UI (mock)
+  // Wallet UI
   const [balanceUSD, setBalanceUSD] = useState(52.4);
   const [displayCurrency, setDisplayCurrency] = useState("USD");
   const [depositOpen, setDepositOpen] = useState(false);
   const [depositCurrency, setDepositCurrency] = useState("NGN");
   const [depositAmount, setDepositAmount] = useState("");
-
-  // derived values without extra deps warnings
   const rate = displayCurrency === "USD" ? 1 : 1600;
   const balancePretty = useMemo(
     () => (balanceUSD * rate).toFixed(displayCurrency === "USD" ? 2 : 0),
@@ -177,7 +148,6 @@ export default function DialProPreview() {
     const v = parseFloat(String(depositAmount)) || 0;
     return depositCurrency === "NGN" ? v / 1600 : v;
   }, [depositAmount, depositCurrency]);
-
   const handleDeposit = () => {
     if ((depositUSD || 0) <= 0) return;
     setBalanceUSD((b) => b + Number(depositUSD.toFixed(2)));
@@ -189,25 +159,19 @@ export default function DialProPreview() {
   const Nav = () => (
     <header className="max-w-7xl mx-auto px-6 py-5">
       <div className="flex items-center justify-between">
-        {/* Left */}
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActive(session ? "home" : "landing")}
-            className="flex items-center gap-2 group"
-            aria-label="Go to Home"
-          >
+          <button onClick={() => setActive(session ? "home" : "landing")} className="flex items-center gap-2 group" aria-label="Go to Home">
             <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-700 ring-1 ring-white/20 group-hover:scale-105 transition" />
             <span className={`font-semibold tracking-wide text-lg ${darkMode ? "text-white" : "text-slate-900"}`}>DialPro</span>
           </button>
 
-          {/* Home button visible ONLY when logged in */}
+          {/* Home visible only when logged in */}
           {session && (
             <Btn variant={darkMode ? "outline" : "lightOutline"} size="sm" onClick={() => setActive("home")}>
               Home
             </Btn>
           )}
 
-          {/* Actions visible only when logged in */}
           {session && (
             <Btn variant={darkMode ? "outline" : "lightOutline"} size="sm" onClick={() => setMenuOpen(true)}>
               <LayoutGrid size={14} /> Actions
@@ -215,7 +179,6 @@ export default function DialProPreview() {
           )}
         </div>
 
-        {/* Right */}
         <div className="flex items-center gap-2">
           <Btn variant={darkMode ? "outline" : "lightOutline"} size="sm" onClick={() => setDarkMode(!darkMode)} aria-label="Toggle theme">
             {darkMode ? <Sun size={14} /> : <Moon size={14} />}
@@ -223,15 +186,22 @@ export default function DialProPreview() {
 
           {!session ? (
             <>
-              <Btn size="sm" className={`${t.grad} text-white`} onClick={() => { signIn(); setActive("home"); }}>
+              <Btn size="sm" className={`${t.grad} text-white`} onClick={() => setActive("signup")}>
                 <Sparkles size={14} /> Create
               </Btn>
-              <Btn size="sm" variant={darkMode ? "outline" : "lightOutline"} onClick={() => { signIn(); setActive("home"); }}>
+              <Btn size="sm" variant={darkMode ? "outline" : "lightOutline"} onClick={() => setActive("login")}>
                 <Lock size={14} /> Sign in
               </Btn>
             </>
           ) : (
-            <Btn size="sm" variant={darkMode ? "outline" : "lightOutline"} onClick={() => { signOut(); setActive("landing"); }}>
+            <Btn
+              size="sm"
+              variant={darkMode ? "outline" : "lightOutline"}
+              onClick={async () => {
+                await supabase.auth.signOut();
+                setActive("landing");
+              }}
+            >
               <LogOut size={14} />
             </Btn>
           )}
@@ -260,34 +230,33 @@ export default function DialProPreview() {
     </header>
   );
 
-  /* ---------- Landing (guest) ---------- */
+  /* ---------- Landing ---------- */
   const Landing = () => (
     <section className="max-w-7xl mx-auto px-6 pt-10 pb-16">
       <div className="grid md:grid-cols-2 gap-10 items-center">
         <div>
           <h1 className={`mt-1 text-5xl md:text-6xl font-black leading-tight ${darkMode ? "text-white" : "text-slate-900"}`}>
-            Get a number. <br /> Capture the code.
+            Get a number. <br/> Capture the code.
           </h1>
           <p className={`mt-5 text-lg ${darkMode ? "text-slate-300" : "text-slate-700"}`}>
             Pick country & service, start verification, and watch OTPs arrive here in real-time.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
-            <Btn className={`${t.grad}`} onClick={() => { signIn(); setActive("home"); }}>Create account</Btn>
-            <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={() => { signIn(); setActive("home"); }}><Lock size={16} /> Sign in</Btn>
+            <Btn className={`${t.grad}`} onClick={() => setActive("signup")}>Create account</Btn>
+            <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={() => setActive("login")}><Lock size={16}/> Sign in</Btn>
           </div>
           <div className={`mt-6 text-xs ${darkMode ? "text-slate-400" : "text-slate-600"}`}>
             Global coverage • Instant activation • Privacy-first
           </div>
         </div>
-
         <div className="relative">
           <Card light={!darkMode}>
             <CardContent>
               <div className="grid grid-cols-3 gap-3">
-                {["us", "+1", "uk", "+44", "de", "+49", "fr", "+33", "ca", "+1 CA", "ng", "+234"].map((v, i) => (
+                {["us","+1","uk","+44","de","+49","fr","+33","ca","+1 CA","ng","+234"].map((v,i)=>(
                   <div key={i} className={`aspect-square flex items-center justify-center rounded-2xl text-sm font-medium
                     ${darkMode ? "bg-white/5 ring-1 ring-white/10 text-slate-200" : "bg-slate-50 ring-1 ring-slate-200 text-slate-800"}`}>
-                    {i % 2 === 0 ? flag(v) : v}
+                    {i%2===0 ? flag(v) : v}
                   </div>
                 ))}
               </div>
@@ -299,14 +268,13 @@ export default function DialProPreview() {
     </section>
   );
 
-  /* ---------- Home Dashboard (after login) ---------- */
+  /* ---------- Home (auth-gated) ---------- */
   const Home = () => (
     <section className="max-w-7xl mx-auto px-6 pb-16">
-      {/* Maintenance / Notice slot */}
       <div className="mb-4">
         <Card light={!darkMode}>
           <CardContent className="flex items-start gap-3">
-            <AlertTriangle className={darkMode ? "text-amber-300" : "text-amber-600"} size={18} />
+            <AlertTriangle className={darkMode ? "text-amber-300" : "text-amber-600"} size={18}/>
             <div>
               <div className={`font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>Maintenance window</div>
               <div className={`${darkMode ? t.sub : lightFix.sub} text-sm`}>SMS ingestion upgrade tonight 01:00–01:15 UTC. No action needed.</div>
@@ -321,26 +289,24 @@ export default function DialProPreview() {
             <h2 className={`text-2xl font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>Welcome back, {displayName}</h2>
             <p className={`${darkMode ? t.sub : lightFix.sub} mt-1 text-sm`}>All systems normal. Start a verification or manage numbers.</p>
 
-            {/* Quick actions (primary) */}
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               <div className={`rounded-xl p-4 ${darkMode ? "bg-white/5 border border-white/10" : "bg-slate-50 border border-slate-200"}`}>
                 <div className="text-sm mb-2">One-time verification</div>
-                <Btn onClick={() => setActive("otp")} className="w-full"><Phone size={16} /> Start verification</Btn>
+                <Btn onClick={()=>setActive("otp")} className="w-full"><Phone size={16}/> Start verification</Btn>
               </div>
               <div className={`rounded-xl p-4 ${darkMode ? "bg-white/5 border border-white/10" : "bg-slate-50 border border-slate-200"}`}>
                 <div className="text-sm mb-2">Reserve / Monthly</div>
-                <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={() => setActive("reserve")} className="w-full"><Phone size={16} /> Browse numbers</Btn>
+                <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={()=>setActive("reserve")} className="w-full"><Phone size={16}/> Browse numbers</Btn>
               </div>
             </div>
 
-            {/* Recent info space */}
             <div className="mt-6">
               <div className={`text-sm ${darkMode ? t.sub : lightFix.sub}`}>Recent info</div>
               <div className="mt-3 grid sm:grid-cols-2 gap-3">
                 {[
-                  { id: 1, title: "NGN local payments", text: "Paystack checkout added for Nigeria users." },
-                  { id: 2, title: "eSIM (preview)", text: "Early access is live—QR activation in tests." },
-                ].map(up => (
+                  { id: 1, title:"NGN local payments", text:"Paystack checkout added for Nigeria users." },
+                  { id: 2, title:"eSIM (preview)", text:"Early access is live—QR activation in tests." },
+                ].map(up=>(
                   <div key={up.id} className={`rounded-xl px-4 py-3 ${darkMode ? "bg-white/5 border border-white/10" : "bg-slate-50 border border-slate-200"}`}>
                     <div className={`font-medium ${darkMode ? "text-white" : "text-slate-900"}`}>{up.title}</div>
                     <div className={`${darkMode ? t.sub : lightFix.sub} text-sm`}>{up.text}</div>
@@ -351,26 +317,26 @@ export default function DialProPreview() {
           </CardContent>
         </Card>
 
-        {/* Shortcuts */}
         <Card light={!darkMode}>
           <CardContent className="flex flex-col gap-3">
             <h3 className={`font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>Shortcuts</h3>
-            <Btn onClick={() => setActive("otp")}><Phone size={16} /> One-time verification</Btn>
-            <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={() => setActive("reserve")}><Phone size={16} /> Reserve number</Btn>
-            <Btn variant={darkMode ? "outline" : "lightOutline"}><History size={16} /> Transactions</Btn>
-            <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={() => setActive("profile")}><User size={16} /> Profile</Btn>
+            <Btn onClick={()=>setActive("otp")}><Phone size={16}/> One-time verification</Btn>
+            <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={()=>setActive("reserve")}><Phone size={16}/> Reserve number</Btn>
+            <Btn variant={darkMode ? "outline" : "lightOutline"}><History size={16}/> Transactions</Btn>
+            <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={()=>setActive("profile")}><User size={16}/> Profile</Btn>
           </CardContent>
         </Card>
       </div>
     </section>
   );
 
-  /* ---------- Auth (mock) ---------- */
+  /* ---------- Auth (real Supabase) ---------- */
   const Auth = ({ mode }) => {
     const [email, setEmail] = useState("");
     const [pass, setPass] = useState("");
     const [confirm, setConfirm] = useState("");
     const [err, setErr] = useState("");
+    const [info, setInfo] = useState("");
     const [loading, setLoading] = useState(false);
 
     const strength = (() => {
@@ -382,28 +348,33 @@ export default function DialProPreview() {
       if (/[^A-Za-z0-9]/.test(pass)) s++;
       return Math.min(4, s);
     })();
+    const bar = (i)=>(
+      <div key={i} className={`h-1 rounded ${i<=strength ? (darkMode ? "bg-emerald-400" : "bg-emerald-600") : (darkMode ? "bg-white/10" : "bg-slate-200")}`} />
+    );
 
     const submit = async () => {
-      setErr(""); setLoading(true);
+      setErr(""); setInfo(""); setLoading(true);
       try {
         if (!email || !pass) throw new Error("Enter email and password");
         if (mode === "signup") {
           if (!confirm) throw new Error("Re-enter your password");
           if (pass !== confirm) throw new Error("Passwords do not match");
+          const { error } = await supabase.auth.signUp({ email, password: pass });
+          if (error) throw error;
+          setInfo("Check your email to confirm your account.");
+          setActive("login");
+          return;
+        } else {
+          const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+          if (error) throw error;
+          setActive("home");
         }
-        // mock sign-in
-        signIn(email);
-        setActive("home");
       } catch (e) {
         setErr(e.message || "Something went wrong");
       } finally {
         setLoading(false);
       }
     };
-
-    const bar = (i) => (
-      <div key={i} className={`h-1 rounded ${i <= strength ? (darkMode ? "bg-emerald-400" : "bg-emerald-600") : (darkMode ? "bg-white/10" : "bg-slate-200")}`} />
-    );
 
     return (
       <section className="max-w-md mx-auto px-6 pt-6 pb-16">
@@ -412,35 +383,36 @@ export default function DialProPreview() {
             <div className="text-center">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs
                 bg-gradient-to-r from-blue-600/20 to-indigo-600/20 border border-white/15">
-                {mode === "signup" ? <Sparkles size={14} /> : <Lock size={14} />}
-                {mode === "signup" ? "Create your DialPro account" : "Welcome back"}
+                {mode==="signup" ? <Sparkles size={14}/> : <Lock size={14}/>}
+                {mode==="signup" ? "Create your DialPro account" : "Welcome back"}
               </div>
             </div>
 
             <div className="mt-4 space-y-3">
               {err && <div className="text-rose-400 text-sm">{err}</div>}
-              <Input light={!darkMode} value={email} onChange={e => setEmail(e.target.value)} placeholder="Email address" />
-              <Input light={!darkMode} type="password" value={pass} onChange={e => setPass(e.target.value)} placeholder={mode === "signup" ? "Create password" : "Password"} />
+              {info && <div className="text-emerald-400 text-sm">{info}</div>}
+              <Input light={!darkMode} value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email address" />
+              <Input light={!darkMode} type="password" value={pass} onChange={e=>setPass(e.target.value)} placeholder={mode==="signup"?"Create password":"Password"} />
               {mode === "signup" && (
                 <>
-                  <div className="grid grid-cols-4 gap-1">{[0, 1, 2, 3].map(bar)}</div>
-                  <Input light={!darkMode} type="password" value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="Re-enter password" />
+                  <div className="grid grid-cols-4 gap-1">{[0,1,2,3].map(bar)}</div>
+                  <Input light={!darkMode} type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} placeholder="Re-enter password" />
                 </>
               )}
             </div>
 
             <div className="mt-5">
               <Btn className={`${t.grad} w-full`} onClick={submit} disabled={loading}>
-                {loading ? "Please wait…" : (mode === "signup" ? "Create account" : "Continue")}
+                {loading ? "Please wait…" : (mode==="signup" ? "Create account" : "Continue")}
               </Btn>
               <Btn variant={darkMode ? "outline" : "lightOutline"} className="w-full mt-2" onClick={() => setActive(session ? "home" : "landing")}>Back</Btn>
             </div>
 
             <div className={`mt-4 text-xs text-center ${darkMode ? "text-slate-400" : "text-slate-600"}`}>
               {mode === "signup" ? (
-                <>Already have an account? <button className="underline" onClick={() => setActive("login")}>Sign in</button></>
+                <>Already have an account? <button className="underline" onClick={()=>setActive("login")}>Sign in</button></>
               ) : (
-                <>New here? <button className="underline" onClick={() => setActive("signup")}>Create account</button></>
+                <>New here? <button className="underline" onClick={()=>setActive("signup")}>Create account</button></>
               )}
             </div>
           </CardContent>
@@ -449,57 +421,44 @@ export default function DialProPreview() {
     );
   };
 
-  /* ---------- OTP (auth-gated, mocked messages) ---------- */
+  /* ---------- OTP (UI kept; provider integration comes later) ---------- */
   const OtpFlow = () => {
-    // DECLARE HOOKS FIRST (don’t early-return before hooks)
-    const meta = useMockMeta();
+    // hooks first
+    const meta = { services:[{code:"whatsapp",name:"WhatsApp"},{code:"gmail",name:"Google Gmail"},{code:"yahoo",name:"Yahoo"},{code:"instagram",name:"Instagram"}], countries:["US","UK","DE","FR","CA","NG"] };
     const [serviceCode, setServiceCode] = useState("whatsapp");
     const [countryPick, setCountryPick] = useState("US");
     const [otpLoading, setOtpLoading] = useState(false);
-
     const [sessionId, setSessionId] = useState(null);
     const [allocated, setAllocated] = useState("");
     const [expiresAt, setExpiresAt] = useState(null);
     const [otpCode, setOtpCode] = useState("");
     const [lastMsg, setLastMsg] = useState(null);
 
-    // MOCK start
+    // gate AFTER hooks
+    if (!session) return <Gate text="Sign in to start a verification" onSignup={()=>setActive("signup")} onLogin={()=>setActive("login")} />;
+
     async function startOtp() {
-      if (!serviceCode || !countryPick) return;
       setOtpLoading(true);
       try {
+        // UI demo: simulate a session allocation + OTP
         const fakeSession = Math.random().toString(36).slice(2, 10);
-        const fakeNumber =
-          countryPick === "US" ? "+1 415 555 0137" :
-          countryPick === "UK" ? "+44 7700 900 111" :
-          "+49 3012 345 678";
+        const fakeNumber = countryPick === "US" ? "+1 415 555 0137" : countryPick === "UK" ? "+44 7700 900 111" : "+49 3012 345 678";
         setSessionId(fakeSession);
         setAllocated(fakeNumber);
-        const end = new Date(Date.now() + 1000 * 60 * 5); // 5 min
+        const end = new Date(Date.now() + 1000 * 60 * 5);
         setExpiresAt(end.toISOString());
         setOtpCode("");
         setLastMsg(null);
-        // Simulate an incoming SMS after 3s and reveal OTP after 5s
-        setTimeout(() => {
-          setLastMsg({ message_body: `Your ${serviceCode} code is 8 4 2 9 1 6`, received_at: new Date().toISOString() });
-        }, 3000);
-        setTimeout(() => {
-          setOtpCode("842916");
-        }, 5000);
+        setTimeout(()=>{ setLastMsg({ message_body: `Your ${serviceCode} code is 8 4 2 9 1 6`, received_at: new Date().toISOString() }); }, 3000);
+        setTimeout(()=>{ setOtpCode("842916"); }, 5000);
       } finally {
         setOtpLoading(false);
       }
     }
-
-    async function refreshLatest() {
+    const refreshLatest = () => {
       if (!lastMsg) return setLastMsg({ message_body: "No new messages yet…", received_at: new Date().toISOString() });
       setLastMsg({ ...lastMsg, received_at: new Date().toISOString() });
-    }
-
-    // RENDER based on session, but AFTER hooks are declared
-    if (!session) {
-      return <Gate text="Sign in to start a verification" onSignup={() => setActive("signup")} onLogin={() => setActive("login")} />;
-    }
+    };
 
     return (
       <section className="max-w-7xl mx-auto px-6 pb-16">
@@ -508,21 +467,13 @@ export default function DialProPreview() {
             <div className="grid md:grid-cols-4 gap-3 md:items-end">
               <div className="md:col-span-1">
                 <label className={`text-xs mb-1 block ${darkMode ? t.sub : lightFix.sub}`}>Country</label>
-                <select
-                  value={countryPick}
-                  onChange={(e) => setCountryPick(e.target.value)}
-                  className={`w-full rounded-xl px-3 py-2 text-sm outline-none ${darkMode ? "bg-white/5 border border-white/15 text-white" : "bg-white border border-slate-300 text-slate-900"}`}
-                >
+                <select value={countryPick} onChange={(e)=>setCountryPick(e.target.value)} className={`w-full rounded-xl px-3 py-2 text-sm outline-none ${darkMode ? "bg-white/5 border border-white/15 text-white" : "bg-white border border-slate-300 text-slate-900"}`}>
                   {meta.countries.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div className="md:col-span-2">
                 <label className={`text-xs mb-1 block ${darkMode ? t.sub : lightFix.sub}`}>Service</label>
-                <select
-                  value={serviceCode}
-                  onChange={(e) => setServiceCode(e.target.value)}
-                  className={`w-full rounded-xl px-3 py-2 text-sm outline-none ${darkMode ? "bg-white/5 border border-white/15 text-white" : "bg-white border border-slate-300 text-slate-900"}`}
-                >
+                <select value={serviceCode} onChange={(e)=>setServiceCode(e.target.value)} className={`w-full rounded-xl px-3 py-2 text-sm outline-none ${darkMode ? "bg-white/5 border border-white/15 text-white" : "bg-white border border-slate-300 text-slate-900"}`}>
                   {meta.services.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
                 </select>
               </div>
@@ -533,15 +484,14 @@ export default function DialProPreview() {
 
             {(sessionId || allocated) && (
               <div className="mt-5 grid md:grid-cols-3 gap-3">
-                {/* Number */}
                 <div className={`${darkMode ? "bg-white/5 border border-white/10" : "bg-slate-50 border border-slate-200"} rounded-xl p-4`}>
                   <div className={`text-xs ${darkMode ? "text-slate-300" : "text-slate-600"}`}>Your verification number</div>
                   <div className={`text-2xl font-extrabold tracking-tight ${darkMode ? "text-white" : "text-slate-900"}`}>{allocated || "—"}</div>
                   <div className={`text-xs mt-1 ${darkMode ? "text-slate-400" : "text-slate-600"}`}>Session: {sessionId}</div>
                   <div className="mt-3 flex gap-2">
                     <Btn variant={darkMode ? "outline" : "lightOutline"} size="sm" onClick={refreshLatest}>Refresh</Btn>
-                    <Btn variant={darkMode ? "outline" : "lightOutline"} size="sm" onClick={async () => { try { await navigator.clipboard.writeText(allocated || ""); } catch { } }}>
-                      <Clipboard size={14} /> Copy
+                    <Btn variant={darkMode ? "outline" : "lightOutline"} size="sm" onClick={async ()=>{ try { await navigator.clipboard.writeText(allocated || ""); } catch {} }}>
+                      <Clipboard size={14}/> Copy
                     </Btn>
                   </div>
                 </div>
@@ -563,8 +513,8 @@ export default function DialProPreview() {
                   <div className="text-xs opacity-80">OTP Code</div>
                   <div className="text-4xl md:text-5xl font-black tracking-[0.35em]">{otpCode}</div>
                 </div>
-                <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={async () => { try { await navigator.clipboard.writeText(otpCode); } catch { } }}>
-                  <Clipboard size={16} /> Copy
+                <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={async ()=>{ try { await navigator.clipboard.writeText(otpCode); } catch {} }}>
+                  <Clipboard size={16}/> Copy
                 </Btn>
               </div>
             )}
@@ -576,47 +526,43 @@ export default function DialProPreview() {
 
   /* ---------- Reserve (auth-gated) ---------- */
   const Reserve = () => {
-    // DECLARE HOOKS FIRST
     const [term, setTerm] = useState("");
-    const [plan, setPlan] = useState("All"); // All | OTP | 7-Day | Monthly
+    const [plan, setPlan] = useState("All");
     const numbers = [
-      { id: 1, e164: "+1 415 550 0123", country: "US", region: "CA", price: 1, kind: "OTP" },
-      { id: 2, e164: "+44 7700 900 111", country: "UK", region: "LON", price: 3, kind: "7-Day" },
-      { id: 3, e164: "+49 3012 345 678", country: "DE", region: "BER", price: 9, kind: "Monthly" },
-      { id: 4, e164: "+33 612 34 56 78", country: "FR", region: "PAR", price: 9, kind: "Monthly" },
+      { id:1, e164:"+1 415 550 0123", country:"US", region:"CA", price:1, kind:"OTP" },
+      { id:2, e164:"+44 7700 900 111", country:"UK", region:"LON", price:3, kind:"7-Day" },
+      { id:3, e164:"+49 3012 345 678", country:"DE", region:"BER", price:9, kind:"Monthly" },
+      { id:4, e164:"+33 612 34 56 78", country:"FR", region:"PAR", price:9, kind:"Monthly" },
     ];
     const filtered = numbers
-      .filter(n => (plan === "All" ? true : n.kind === plan))
+      .filter(n => (plan==="All" ? true : n.kind === plan))
       .filter(n => [n.e164, n.country, n.region].join(" ").toLowerCase().includes(term.toLowerCase()));
+
+    if (!session) return <Gate text="Sign in to reserve numbers" onSignup={()=>setActive("signup")} onLogin={()=>setActive("login")} />;
 
     const [open, setOpen] = useState(false);
     const [selected, setSelected] = useState(null);
     const [copied, setCopied] = useState(false);
-
-    // GATE after hooks are declared
-    if (!session) {
-      return <Gate text="Sign in to reserve numbers" onSignup={() => setActive("signup")} onLogin={() => setActive("login")} />;
-    }
 
     return (
       <section className="max-w-7xl mx-auto px-6 pb-16">
         <div className={`rounded-2xl p-3 flex flex-wrap items-center gap-3
           ${darkMode ? "bg-[#081225]/80 border border-white/10" : "bg-white/90 border border-slate-200"}`}>
           <div className={`inline-flex rounded-xl overflow-hidden ${darkMode ? "border border-white/15 bg-white/5" : "border border-slate-300 bg-white"}`}>
-            {["All", "OTP", "7-Day", "Monthly"].map((p) => (
-              <button key={p} onClick={() => setPlan(p)} className={`px-3 py-1.5 text-xs transition ${plan === p ? (darkMode ? "bg-white/15 text-white" : "bg-slate-100 text-slate-900") : "opacity-80"}`}>{p}</button>
+            {["All","OTP","7-Day","Monthly"].map((p) => (
+              <button key={p} onClick={()=>setPlan(p)} className={`px-3 py-1.5 text-xs transition ${plan===p ? (darkMode ? "bg-white/15 text-white" : "bg-slate-100 text-slate-900") : "opacity-80"}`}>{p}</button>
             ))}
           </div>
           <div className="relative ml-auto min-w-[240px]">
-            <Search size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${darkMode ? "opacity-60 text-white" : "opacity-60 text-slate-600"}`} />
-            <Input light={!darkMode} placeholder="Search country, region, or number…" value={term} onChange={(e) => setTerm(e.target.value)} className="pl-9" />
+            <Search size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${darkMode ? "opacity-60 text-white" : "opacity-60 text-slate-600"}`}/>
+            <Input light={!darkMode} placeholder="Search country, region, or number…" value={term} onChange={(e)=>setTerm(e.target.value)} className="pl-9"/>
           </div>
         </div>
 
         <Card className="mt-4" light={!darkMode}>
           <CardContent className="p-0">
             <div className={`max-h-[540px] overflow-y-auto ${darkMode ? "divide-white/10" : "divide-slate-200"} divide-y`}>
-              {filtered.map((n) => (
+              {filtered.map((n)=>(
                 <div key={n.id} className={`group flex items-center gap-4 px-4 sm:px-6 py-4 transition ${darkMode ? "hover:bg-white/5" : "hover:bg-slate-50"}`}>
                   <div className="text-2xl shrink-0">{flag(n.country)}</div>
                   <div className="min-w-0 flex-1">
@@ -627,43 +573,36 @@ export default function DialProPreview() {
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className={`font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>${n.price}{n.kind === "Monthly" && <span className={`${darkMode ? "text-slate-400" : "text-slate-600"} text-xs`}>/mo</span>}</div>
+                    <div className={`font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>${n.price}{n.kind==="Monthly" && <span className={`${darkMode ? "text-slate-400" : "text-slate-600"} text-xs`}>/mo</span>}</div>
                     <div className="mt-1 flex gap-2 justify-end">
-                      <Btn size="sm" variant={darkMode ? "outline" : "lightOutline"} onClick={() => { setSelected(n); setOpen(true); }}>Details</Btn>
-                      <Btn size="sm" onClick={() => { setSelected(n); setOpen(true); }}>Reserve</Btn>
+                      <Btn size="sm" variant={darkMode ? "outline" : "lightOutline"} onClick={()=>{setSelected(n); setOpen(true);}}>Details</Btn>
+                      <Btn size="sm" onClick={()=>{setSelected(n); setOpen(true);}}>Reserve</Btn>
                     </div>
                   </div>
                 </div>
               ))}
-              {filtered.length === 0 && <div className={`px-6 py-12 text-sm ${darkMode ? "text-slate-400" : "text-slate-600"}`}>No numbers match your filters.</div>}
+              {filtered.length===0 && <div className={`px-6 py-12 text-sm ${darkMode ? "text-slate-400" : "text-slate-600"}`}>No numbers match your filters.</div>}
             </div>
           </CardContent>
         </Card>
 
-        <Dialog open={open} onClose={() => setOpen(false)}>
+        <Dialog open={open} onClose={()=>setOpen(false)}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">{selected?.e164 || "—"}</DialogTitle>
             <DialogDescription>{selected && `${selected.country} • ${selected.region} • ${selected.kind}`}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <Btn
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  if (!selected) return;
-                  try { await navigator.clipboard.writeText(selected.e164); setCopied(true); setTimeout(() => setCopied(false), 1200); } catch { }
-                }}
-                className="flex items-center gap-2"
-              >
-                {copied ? <CheckCircle size={14} /> : <Clipboard size={14} />}{copied ? "Copied" : "Copy"}
-              </Btn>
-              <div className="text-sm"><span className="font-semibold">${selected?.price || 0}</span>{selected?.kind === "Monthly" && <span className="text-slate-400"> / mo</span>}</div>
+              <Btn variant="outline" size="sm" onClick={async ()=>{
+                if (!selected) return;
+                try { await navigator.clipboard.writeText(selected.e164); setCopied(true); setTimeout(()=>setCopied(false),1200);} catch {}
+              }} className="flex items-center gap-2">{copied ? <CheckCircle size={14}/> : <Clipboard size={14}/>}{copied ? "Copied" : "Copy"}</Btn>
+              <div className="text-sm"><span className="font-semibold">${selected?.price || 0}</span>{selected?.kind==="Monthly" && <span className="text-slate-400"> / mo</span>}</div>
             </div>
           </div>
           <DialogFooter>
-            <Btn onClick={() => setOpen(false)}>Continue</Btn>
-            <Btn variant="ghost" onClick={() => setOpen(false)}>Close</Btn>
+            <Btn onClick={()=>setOpen(false)}>Continue</Btn>
+            <Btn variant="ghost" onClick={()=>setOpen(false)}>Close</Btn>
           </DialogFooter>
         </Dialog>
       </section>
@@ -672,52 +611,42 @@ export default function DialProPreview() {
 
   /* ---------- Profile (auth-gated) ---------- */
   const Profile = () => {
-    // hooks first
     const [saving, setSaving] = useState(false);
     const [info, setInfo] = useState({ msg: "", kind: "" });
-    const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+    const [notifications, setNotifications] = useState([
+      { id: 1, message: "Deposit of $29 confirmed", time: "1h ago" },
+      { id: 2, message: "Reserved +1-415-550-0123", time: "2h ago" },
+    ]);
 
-    if (!session) {
-      return <Gate text="Sign in to view profile" onSignup={() => setActive("signup")} onLogin={() => setActive("login")} />;
-    }
+    if (!session) return <Gate text="Sign in to view profile" onSignup={()=>setActive("signup")} onLogin={()=>setActive("login")} />;
 
     const saveProfile = async () => {
       setSaving(true); setInfo({ msg: "", kind: "" });
-      setTimeout(() => { setInfo({ msg: "Profile saved.", kind: "success" }); setSaving(false); }, 600);
+      setTimeout(()=>{ setInfo({ msg: "Profile saved.", kind: "success" }); setSaving(false); }, 600);
     };
-
-    const resetPassword = async () => {
-      setInfo({ msg: "Reset email sent (demo)", kind: "success" });
-    };
-
-    const deleteAccount = async () => {
-      setInfo({ msg: "Account deletion requires admin (demo)", kind: "info" });
-      setActive("support");
-    };
+    const resetPassword = async () => setInfo({ msg: "Reset email sent (demo)", kind: "success" });
+    const deleteAccount = async () => { setInfo({ msg: "Account deletion requires admin (demo)", kind: "info" }); };
 
     return (
       <section className="max-w-3xl mx-auto px-6 pb-16">
         <Card light={!darkMode}>
           <CardContent>
             <h2 className={`text-xl font-semibold mb-4 ${darkMode ? "text-white" : "text-slate-900"}`}>Profile</h2>
-
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label className={`text-xs mb-1 block ${darkMode ? t.sub : lightFix.sub}`}>Full name</label>
-                <Input light={!darkMode} value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Your name" />
+                <Input light={!darkMode} value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Your name" />
               </div>
               <div>
                 <label className={`text-xs mb-1 block ${darkMode ? t.sub : lightFix.sub}`}>Avatar URL</label>
-                <Input light={!darkMode} value={avatarUrl} onChange={e => setAvatarUrl(e.target.value)} placeholder="https://…" />
+                <Input light={!darkMode} value={avatarUrl} onChange={e=>setAvatarUrl(e.target.value)} placeholder="https://…" />
               </div>
             </div>
-
             <div className="mt-4 flex gap-2">
-              <Btn onClick={saveProfile} disabled={saving}><Save size={16} /> {saving ? "Saving…" : "Save changes"}</Btn>
-              <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={resetPassword}><KeyRound size={16} /> Reset password</Btn>
-              <Btn variant="destructive" onClick={deleteAccount}><Trash2 size={16} /> Delete account</Btn>
+              <Btn onClick={saveProfile} disabled={saving}><Save size={16}/> {saving ? "Saving…" : "Save changes"}</Btn>
+              <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={resetPassword}><KeyRound size={16}/> Reset password</Btn>
+              <Btn variant="destructive" onClick={deleteAccount}><Trash2 size={16}/> Delete account</Btn>
             </div>
-
             {info.msg && (
               <div className={`mt-3 text-sm ${
                 info.kind === "success" ? (darkMode ? "text-emerald-300" : "text-emerald-700")
@@ -733,13 +662,13 @@ export default function DialProPreview() {
           {notifications.length === 0 ? (
             <div className={`text-sm ${darkMode ? "text-slate-400" : "text-slate-600"}`}>No new notifications.</div>
           ) : (
-            notifications.map(n => (
+            notifications.map(n=>(
               <div key={n.id} className={`flex items-center justify-between rounded-2xl p-4 mb-3 ${darkMode ? "border border-white/10 bg-white/5" : "border border-slate-200 bg-white"}`}>
                 <div>
                   <div className={`${darkMode ? "text-slate-200" : "text-slate-900"} text-sm`}>{n.message}</div>
                   <div className={`${darkMode ? "text-slate-400" : "text-slate-600"} text-xs`}>{n.time}</div>
                 </div>
-                <Btn size="sm" variant={darkMode ? "outline" : "lightOutline"} onClick={() => setNotifications(notifications.filter(x => x.id !== n.id))}>Dismiss</Btn>
+                <Btn size="sm" variant={darkMode ? "outline" : "lightOutline"} onClick={()=>setNotifications(notifications.filter(x=>x.id!==n.id))}>Dismiss</Btn>
               </div>
             ))
           )}
@@ -755,69 +684,53 @@ export default function DialProPreview() {
         <Card light={!darkMode}><CardContent>
           <h3 className={`text-lg font-semibold mb-2 ${darkMode ? "text-white" : "text-slate-900"}`}>{text}</h3>
           <div className="flex gap-2 justify-center">
-            <Btn className={t.grad} onClick={onSignup}><Sparkles size={16} /> Create account</Btn>
-            <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={onLogin}><Lock size={16} /> Sign in</Btn>
+            <Btn className={t.grad} onClick={onSignup}><Sparkles size={16}/> Create account</Btn>
+            <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={onLogin}><Lock size={16}/> Sign in</Btn>
           </div>
         </CardContent></Card>
       </section>
     );
   }
 
-  /* ---------- Support / Terms ---------- */
-  const Support = () => (
-    <section className="max-w-3xl mx-auto px-6 pb-16">
-      <h2 className={`text-xl font-semibold mb-4 ${darkMode ? "text-white" : "text-slate-900"}`}>Support</h2>
-      <Card light={!darkMode}><CardContent>
-        <p className={`${darkMode ? t.sub : lightFix.sub}`}>Need help? Email <span className={`${darkMode ? "text-slate-200" : "text-slate-800"} underline`}>support@dialpro.app</span> or open chat.</p>
-      </CardContent></Card>
-    </section>
-  );
-  const Terms = () => (
-    <section className="max-w-4xl mx-auto px-6 pb-16">
-      <Card light={!darkMode}><CardContent>
-        <h2 className={`text-2xl font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>Terms & Conditions</h2>
-        <p className={`${darkMode ? t.sub : lightFix.sub} mt-2 text-sm`}>By using DialPro you agree to the following:</p>
-        <ul className={`mt-4 space-y-2 text-sm ${darkMode ? t.sub : lightFix.sub}`}>
-          <li>Lawful use only.</li>
-          <li>Delivery best-effort; third-party senders may vary.</li>
-          <li>Keep your credentials safe.</li>
-          <li>Wallet balances non-transferable; refunds case-by-case.</li>
-          <li>We process data per our Privacy Policy.</li>
-        </ul>
-      </CardContent></Card>
-    </section>
-  );
-
   /* ---------- Actions Drawer ---------- */
   const ActionsPanel = () => (
-    <Dialog open={menuOpen} onClose={() => setMenuOpen(false)}>
+    <Dialog open={menuOpen} onClose={()=>setMenuOpen(false)}>
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-2"><LayoutGrid size={18} /> Quick Actions</DialogTitle>
+        <DialogTitle className="flex items-center gap-2"><LayoutGrid size={18}/> Quick Actions</DialogTitle>
         <DialogDescription>Jump to what matters</DialogDescription>
       </DialogHeader>
       <div className="grid gap-2">
-        <Btn onClick={() => { setMenuOpen(false); setActive(session ? "home" : "landing"); }}>Home</Btn>
+        <Btn onClick={()=>{ setMenuOpen(false); setActive(session ? "home" : "landing"); }}>Home</Btn>
         {session ? (
           <>
-            <Btn variant="outline" onClick={() => { setMenuOpen(false); setActive("otp"); }}><KeyRound size={16} /> One-time verification</Btn>
-            <Btn variant="outline" onClick={() => { setMenuOpen(false); setActive("reserve"); }}><Phone size={16} /> Reserve number</Btn>
-            <Btn variant="outline" onClick={() => { setMenuOpen(false); setActive("profile"); }}><User size={16} /> Profile</Btn>
-            <Btn variant="outline" onClick={() => { setMenuOpen(false); setActive("terms"); }}><Shield size={16} /> Terms</Btn>
-            <Btn variant="outline" onClick={() => { setMenuOpen(false); setActive("support"); }}><HelpCircle size={16} /> Support</Btn>
-            <Btn variant="outline" onClick={() => { signOut(); setMenuOpen(false); setActive("landing"); }}><LogOut size={16} /> Log out</Btn>
+            <Btn variant="outline" onClick={()=>{ setMenuOpen(false); setActive("otp"); }}>One-time verification</Btn>
+            <Btn variant="outline" onClick={()=>{ setMenuOpen(false); setActive("reserve"); }}>Reserve number</Btn>
+            <Btn variant="outline" onClick={()=>{ setMenuOpen(false); setActive("profile"); }}>Profile</Btn>
+            <Btn variant="outline" onClick={()=>{ setMenuOpen(false); setActive("terms"); }}><Shield size={16}/> Terms</Btn>
+            <Btn variant="outline" onClick={()=>{ setMenuOpen(false); setActive("support"); }}><HelpCircle size={16}/> Support</Btn>
+            <Btn variant="outline" onClick={async ()=>{ await supabase.auth.signOut(); setMenuOpen(false); setActive("landing"); }}><LogOut size={16}/> Log out</Btn>
           </>
         ) : (
           <>
-            <Btn variant="outline" onClick={() => { setMenuOpen(false); setActive("signup"); }}><Sparkles size={16} /> Create account</Btn>
-            <Btn variant="outline" onClick={() => { setMenuOpen(false); setActive("login"); }}><Lock size={16} /> Sign in</Btn>
+            <Btn variant="outline" onClick={()=>{ setMenuOpen(false); setActive("signup"); }}><Sparkles size={16}/> Create account</Btn>
+            <Btn variant="outline" onClick={()=>{ setMenuOpen(false); setActive("login"); }}><Lock size={16}/> Sign in</Btn>
           </>
         )}
       </div>
       <DialogFooter>
-        <Btn variant="ghost" onClick={() => setMenuOpen(false)}><X size={16} /> Close</Btn>
+        <Btn variant="ghost" onClick={()=>setMenuOpen(false)}><X size={16}/> Close</Btn>
       </DialogFooter>
     </Dialog>
   );
+
+  // Splash while auth initializes (prevents flicker)
+  if (!authReady) {
+    return (
+      <div className={`${darkMode ? t.bg : "bg-slate-50"} min-h-screen flex items-center justify-center`}>
+        <div className={`${darkMode ? "text-white" : "text-slate-900"}`}>Loading…</div>
+      </div>
+    );
+  }
 
   return (
     <div className={`${darkMode ? t.bg : "bg-slate-50"} min-h-screen ${darkMode ? "text-white" : "text-slate-900"} relative overflow-hidden`}>
@@ -829,22 +742,33 @@ export default function DialProPreview() {
 
       <Nav />
 
-      {/* Pages */}
       {active === "landing" && <Landing />}
       {active === "home" && session && <Home />}
       {active === "otp" && <OtpFlow />}
       {active === "reserve" && <Reserve />}
       {active === "profile" && <Profile />}
       {active === "support" && <Support />}
-      {active === "terms" && <Terms />}
+      {active === "terms" && (
+        <section className="max-w-4xl mx-auto px-6 pb-16">
+          <Card light={!darkMode}><CardContent>
+            <h2 className={`text-2xl font-bold ${darkMode ? "text-white" : "text-slate-900"}`}>Terms & Conditions</h2>
+            <p className={`${darkMode ? t.sub : lightFix.sub} mt-2 text-sm`}>By using DialPro you agree to the following:</p>
+            <ul className={`mt-4 space-y-2 text-sm ${darkMode ? t.sub : lightFix.sub}`}>
+              <li>Lawful use only.</li>
+              <li>Delivery best-effort; third-party senders may vary.</li>
+              <li>Keep your credentials safe.</li>
+              <li>Wallet balances non-transferable; refunds case-by-case.</li>
+              <li>We process data per our Privacy Policy.</li>
+            </ul>
+          </CardContent></Card>
+        </section>
+      )}
       {active === "signup" && <Auth mode="signup" />}
       {active === "login" && <Auth mode="login" />}
 
-      {/* Actions Drawer */}
       <ActionsPanel />
 
-      {/* Deposit modal */}
-      <Dialog open={depositOpen} onClose={() => setDepositOpen(false)}>
+      <Dialog open={depositOpen} onClose={()=>setDepositOpen(false)}>
         <DialogHeader>
           <DialogTitle>Deposit funds</DialogTitle>
           <DialogDescription>Local NGN or USD supported. We credit your wallet in USD.</DialogDescription>
@@ -853,7 +777,7 @@ export default function DialProPreview() {
           <div className="md:col-span-1">
             <select
               value={depositCurrency}
-              onChange={(e) => setDepositCurrency(e.target.value)}
+              onChange={(e)=>setDepositCurrency(e.target.value)}
               className={`w-full rounded-md px-3 py-2 text-sm outline-none ${darkMode ? "border border-white/15 bg-white/5 text-white" : "border border-slate-300 bg-white text-slate-900"}`}
             >
               <option value="NGN">NGN (₦) — Local Pay</option>
@@ -863,18 +787,18 @@ export default function DialProPreview() {
           <Input
             light={!darkMode}
             type="number"
-            placeholder={depositCurrency === "NGN" ? "Amount in NGN" : "Amount in USD"}
+            placeholder={depositCurrency==="NGN" ? "Amount in NGN" : "Amount in USD"}
             value={depositAmount}
-            onChange={(e) => setDepositAmount(e.target.value)}
+            onChange={(e)=>setDepositAmount(e.target.value)}
             className="md:col-span-2"
           />
           <Btn className="w-full md:w-auto" onClick={handleDeposit}>Deposit</Btn>
         </div>
         <div className={`text-xs mt-1 ${darkMode ? "text-slate-300" : "text-slate-700"}`}>
-          Credits in USD: <span className="font-medium">${depositUSD.toFixed(2)}</span>{depositCurrency === "NGN" && <span> (rate ₦{(1600).toLocaleString()} ≈ $1)</span>}
+          Credits in USD: <span className="font-medium">${depositUSD.toFixed(2)}</span>{depositCurrency==="NGN" && <span> (rate ₦{(1600).toLocaleString()} ≈ $1)</span>}
         </div>
         <DialogFooter>
-          <Btn variant="ghost" onClick={() => setDepositOpen(false)}>Close</Btn>
+          <Btn variant="ghost" onClick={()=>setDepositOpen(false)}>Close</Btn>
         </DialogFooter>
       </Dialog>
     </div>
