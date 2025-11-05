@@ -2,17 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Sun, Moon, LogOut, HelpCircle, Phone, DollarSign, History,
+  Sun, Moon, Bell, LogOut, HelpCircle, Phone, DollarSign, History,
   LayoutGrid, Sparkles, Shield, Lock, Search, Clipboard,
-  CheckCircle, X, User, KeyRound, Trash2, Save, AlertTriangle
+  CheckCircle, Menu, X, User, KeyRound, Trash2, Save, AlertTriangle
 } from "lucide-react";
-import { supabase } from "../lib/supabaseClient";
-
-/* ==========================================================================
-   REAL AUTH (Supabase: Email/Password only)
-   OTP flow is mocked for preview.
-   No Google/Gmail sign-in.
-   ========================================================================== */
+import { supabase } from "@/lib/supabaseClient";
 
 /* ---------------- Theme ---------------- */
 const t = {
@@ -44,7 +38,7 @@ const Btn = ({ as = "button", variant = "solid", size = "md", className = "", ..
   };
   const sizes = { sm: "px-3 py-1.5 text-xs", md: "px-4 py-2 text-sm", lg: "px-5 py-2.5" };
   const Comp = as;
-  return <Comp type="button" className={`${base} ${variants[variant]} ${sizes[size]} ${className}`} {...props} />;
+  return <Comp className={`${base} ${variants[variant]} ${sizes[size]} ${className}`} {...props} />;
 };
 
 const Card = ({ className = "", children, light = false }) => (
@@ -122,58 +116,27 @@ function CountdownTimer({ endsAt, dark }) {
   );
 }
 
-/* ---------------- REAL Auth (Supabase: email/password) ---------------- */
-function useAuth() {
-  const [session, setSession] = useState(null);
-
-  useEffect(() => {
-    let sub;
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      setSession(data.session || null);
-      const listener = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
-      sub = listener?.data?.subscription;
-    })();
-    return () => {
-      try { sub?.unsubscribe?.(); } catch {}
-    };
-  }, []);
-
-  const signInEmail = async (email, password) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw new Error(error.message);
-    return data.session;
-  };
-
-  const signUpEmail = async (email, password) => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) throw new Error(error.message);
-    return data.user;
-  };
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    setSession(null);
-  };
-
-  return { session, signInEmail, signUpEmail, signOut };
-}
-
-/* ---------------- Main Component ---------------- */
-export default function DialProPreview() {
-  // Routes: landing | home | otp | reserve | tx | profile | login | signup | terms | support
+/* ---------------- Main App ---------------- */
+export default function DialPro() {
+  // Router: landing (guest) | home | otp | reserve | tx | profile | login | signup | terms | support
   const [active, setActive] = useState("landing");
   const [darkMode, setDarkMode] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const { session, signInEmail, signUpEmail, signOut } = useAuth();
+  // REAL Supabase session
+  const [session, setSession] = useState(null);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session || null));
+    const { data: sub } = supabase.auth.onAuthStateChange((_evt, s) => setSession(s || null));
+    return () => { try { sub.subscription.unsubscribe(); } catch {} };
+  }, []);
 
-  // Greeting
+  // Profile basics (local UI state; you can later bind to a profiles table)
   const [fullName, setFullName] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const displayName = fullName || session?.user?.email?.split("@")[0] || "User";
 
-  // Wallet (mock)
+  // Wallet UI (mock)
   const [balanceUSD, setBalanceUSD] = useState(52.4);
   const [displayCurrency, setDisplayCurrency] = useState("USD");
   const FX = { USD: 1, NGN: 1600 };
@@ -208,14 +171,11 @@ export default function DialProPreview() {
             <span className={`font-semibold tracking-wide text-lg ${darkMode ? "text-white" : "text-slate-900"}`}>DialPro</span>
           </button>
 
-          {/* Home button visible ONLY when logged in */}
+          {/* Home button only when logged in */}
           {session && (
-            <Btn variant={darkMode ? "outline" : "lightOutline"} size="sm" onClick={() => setActive("home")}>
-              Home
-            </Btn>
+            <Btn variant={darkMode ? "outline" : "lightOutline"} size="sm" onClick={() => setActive("home")}>Home</Btn>
           )}
 
-          {/* Actions only when logged in */}
           {session && (
             <Btn variant={darkMode ? "outline" : "lightOutline"} size="sm" onClick={()=>setMenuOpen(true)}>
               <LayoutGrid size={14}/> Actions
@@ -231,11 +191,11 @@ export default function DialProPreview() {
 
           {!session ? (
             <>
-              <Btn size="sm" className={`${t.grad} text-white`} onClick={()=> setActive("signup")}><Sparkles size={14}/> Create account</Btn>
+              <Btn size="sm" className={`${t.grad} text-white`} onClick={()=> setActive("signup")}><Sparkles size={14}/> Create</Btn>
               <Btn size="sm" variant={darkMode ? "outline" : "lightOutline"} onClick={()=> setActive("login")}><Lock size={14}/> Sign in</Btn>
             </>
           ) : (
-            <Btn size="sm" variant={darkMode ? "outline" : "lightOutline"} onClick={async()=>{ await signOut(); setActive("landing"); }}>
+            <Btn size="sm" variant={darkMode ? "outline" : "lightOutline"} onClick={async ()=>{ await supabase.auth.signOut(); setActive("landing"); }}>
               <LogOut size={14}/>
             </Btn>
           )}
@@ -257,7 +217,7 @@ export default function DialProPreview() {
           </div>
           <div className="flex items-center gap-2">
             <Btn size="sm" variant={darkMode ? "outline" : "lightOutline"} onClick={()=>setDepositOpen(true)}><DollarSign size={16}/> Deposit</Btn>
-            <Btn size="sm" variant={darkMode ? "outline" : "lightOutline"} onClick={()=>setActive("tx")}> <History size={16}/> Activity</Btn>
+            <Btn size="sm" variant={darkMode ? "outline" : "lightOutline"}> <History size={16}/> Activity</Btn>
           </div>
         </div>
       )}
@@ -306,7 +266,6 @@ export default function DialProPreview() {
   /* ---------- Home Dashboard (after login) ---------- */
   const Home = () => (
     <section className="max-w-7xl mx-auto px-6 pb-16">
-      {/* Notice */}
       <div className="mb-4">
         <Card light={!darkMode}>
           <CardContent className="flex items-start gap-3">
@@ -325,7 +284,7 @@ export default function DialProPreview() {
             <h2 className={`text-2xl font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>Welcome back, {displayName}</h2>
             <p className={`${darkMode ? t.sub : lightFix.sub} mt-1 text-sm`}>All systems normal. Start a verification or manage numbers.</p>
 
-            {/* Primary actions */}
+            {/* Quick actions */}
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               <div className={`rounded-xl p-4 ${darkMode ? "bg-white/5 border border-white/10" : "bg-slate-50 border border-slate-200"}`}>
                 <div className="text-sm mb-2">One-time verification</div>
@@ -361,7 +320,7 @@ export default function DialProPreview() {
             <h3 className={`font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>Shortcuts</h3>
             <Btn onClick={()=>setActive("otp")}><Phone size={16}/> One-time verification</Btn>
             <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={()=>setActive("reserve")}><Phone size={16}/> Reserve number</Btn>
-            <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={()=>setActive("tx")}><History size={16}/> Transactions</Btn>
+            <Btn variant={darkMode ? "outline" : "lightOutline"}><History size={16}/> Transactions</Btn>
             <Btn variant={darkMode ? "outline" : "lightOutline"} onClick={()=>setActive("profile")}><User size={16}/> Profile</Btn>
           </CardContent>
         </Card>
@@ -369,7 +328,7 @@ export default function DialProPreview() {
     </section>
   );
 
-  /* ---------- Auth (Email/Password) ---------- */
+  /* ---------- Auth (REAL Supabase email+password) ---------- */
   const Auth = ({ mode }) => {
     const [email, setEmail] = useState("");
     const [pass, setPass] = useState("");
@@ -394,9 +353,11 @@ export default function DialProPreview() {
         if (mode === "signup") {
           if (!confirm) throw new Error("Re-enter your password");
           if (pass !== confirm) throw new Error("Passwords do not match");
-          await signUpEmail(email, pass);
+          const { error } = await supabase.auth.signUp({ email, password: pass });
+          if (error) throw error;
         } else {
-          await signInEmail(email, pass);
+          const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+          if (error) throw error;
         }
         setActive("home");
       } catch (e) {
@@ -454,23 +415,17 @@ export default function DialProPreview() {
     );
   };
 
-  /* ---------- Meta (static) ---------- */
-  function useMockMeta() {
-    return {
-      services: [
-        { code: "whatsapp", name: "WhatsApp" },
-        { code: "gmail", name: "Google Gmail" },
-        { code: "yahoo", name: "Yahoo" },
-        { code: "instagram", name: "Instagram" },
-      ],
-      countries: ["US", "UK", "DE", "FR", "CA", "NG"],
-    };
-  }
-
-  /* ---------- OTP (auth-gated, mocked messages) ---------- */
+  /* ---------- OTP (auth-gated, demo messages; real number later) ---------- */
   const OtpFlow = () => {
-    const meta = useMockMeta();
     if (!session) return <Gate text="Sign in to start a verification" onSignup={()=>setActive("signup")} onLogin={()=>setActive("login")} />;
+
+    const services = [
+      { code: "whatsapp", name: "WhatsApp" },
+      { code: "gmail", name: "Google Gmail" },
+      { code: "yahoo", name: "Yahoo" },
+      { code: "instagram", name: "Instagram" },
+    ];
+    const countries = ["US", "UK", "DE", "FR", "CA", "NG"];
 
     const [serviceCode, setServiceCode] = useState("whatsapp");
     const [countryPick, setCountryPick] = useState("US");
@@ -486,6 +441,7 @@ export default function DialProPreview() {
       if (!serviceCode || !countryPick) return;
       setOtpLoading(true);
       try {
+        // Demo allocation (wire to your API later)
         const fakeSession = Math.random().toString(36).slice(2, 10);
         const fakeNumber = countryPick === "US" ? "+1 415 555 0137" : countryPick === "UK" ? "+44 7700 900 111" : "+49 3012 345 678";
         setSessionId(fakeSession);
@@ -494,6 +450,7 @@ export default function DialProPreview() {
         setExpiresAt(end.toISOString());
         setOtpCode("");
         setLastMsg(null);
+        // Simulated incoming SMS
         setTimeout(()=>{
           setLastMsg({ message_body: `Your ${serviceCode} code is 8 4 2 9 1 6`, received_at: new Date().toISOString() });
         }, 3000);
@@ -522,7 +479,7 @@ export default function DialProPreview() {
                   onChange={(e)=>setCountryPick(e.target.value)}
                   className={`w-full rounded-xl px-3 py-2 text-sm outline-none ${darkMode ? "bg-white/5 border border-white/15 text-white" : "bg-white border border-slate-300 text-slate-900"}`}
                 >
-                  {meta.countries.map(c => <option key={c} value={c}>{c}</option>)}
+                  {countries.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div className="md:col-span-2">
@@ -532,7 +489,7 @@ export default function DialProPreview() {
                   onChange={(e)=>setServiceCode(e.target.value)}
                   className={`w-full rounded-xl px-3 py-2 text-sm outline-none ${darkMode ? "bg-white/5 border border-white/15 text-white" : "bg-white border border-slate-300 text-slate-900"}`}
                 >
-                  {meta.services.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
+                  {services.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
                 </select>
               </div>
               <div className="md:col-span-1">
@@ -650,7 +607,7 @@ export default function DialProPreview() {
             <DialogTitle className="flex items-center gap-2">{selected?.e164 || "—"}</DialogTitle>
             <DialogDescription>{selected && `${selected.country} • ${selected.region} • ${selected.kind}`}</DialogDescription>
           </DialogHeader>
-        <div className="space-y-4">
+          <div className="space-y-4">
             <div className="flex items-center justify-between">
               <Btn variant="outline" size="sm" onClick={async ()=>{
                 if (!selected) return;
@@ -668,28 +625,7 @@ export default function DialProPreview() {
     );
   };
 
-  /* ---------- Transactions (auth-gated stub so button "works") ---------- */
-  const Tx = () => {
-    if (!session) return <Gate text="Sign in to view transactions" onSignup={()=>setActive("signup")} onLogin={()=>setActive("login")} />;
-
-    const txns = []; // hook this to your real data later
-    return (
-      <section className="max-w-4xl mx-auto px-6 pb-16">
-        <Card light={!darkMode}>
-          <CardContent>
-            <h2 className={`text-xl font-semibold ${darkMode ? "text-white" : "text-slate-900"}`}>Transactions</h2>
-            {txns.length === 0 ? (
-              <div className={`${darkMode ? "text-slate-300" : "text-slate-600"} text-sm mt-2`}>No transactions yet.</div>
-            ) : (
-              <div className="mt-3">…</div>
-            )}
-          </CardContent>
-        </Card>
-      </section>
-    );
-  };
-
-  /* ---------- Profile ---------- */
+  /* ---------- Profile (UI only for now) ---------- */
   const [notifications, setNotifications] = useState([
     { id: 1, message: "Deposit of $29 confirmed", time: "1h ago" },
     { id: 2, message: "Reserved +1-415-550-0123", time: "2h ago" },
@@ -707,18 +643,15 @@ export default function DialProPreview() {
     };
 
     const resetPassword = async () => {
-      try {
-        await supabase.auth.resetPasswordForEmail(session?.user?.email, {
-          redirectTo: typeof window !== "undefined" ? `${window.location.origin}/reset` : undefined,
-        });
-        setInfo({ msg: "Reset password email sent.", kind: "success" });
-      } catch (e) {
-        setInfo({ msg: e.message || "Could not send reset email", kind: "error" });
-      }
+      if (!session?.user?.email) return;
+      const { error } = await supabase.auth.resetPasswordForEmail(session.user.email, {
+        redirectTo: typeof window !== "undefined" ? `${window.location.origin}` : undefined,
+      });
+      setInfo({ msg: error ? error.message : "Reset email sent.", kind: error ? "error" : "success" });
     };
 
     const deleteAccount = async () => {
-      setInfo({ msg: "Account deletion requires admin (demo)", kind: "info" });
+      setInfo({ msg: "Account deletion requires admin endpoint.", kind: "info" });
       setActive("support");
     };
 
@@ -823,17 +756,15 @@ export default function DialProPreview() {
         <DialogDescription>Jump to what matters</DialogDescription>
       </DialogHeader>
       <div className="grid gap-2">
-        {/* Home button only shown to logged-in users, so mirror it here */}
-        {session && <Btn onClick={()=>{ setMenuOpen(false); setActive("home"); }}>Home</Btn>}
+        <Btn onClick={()=>{ setMenuOpen(false); setActive(session ? "home" : "landing"); }}>Home</Btn>
         {session ? (
           <>
             <Btn variant="outline" onClick={()=>{ setMenuOpen(false); setActive("otp"); }}><KeyRound size={16}/> One-time verification</Btn>
             <Btn variant="outline" onClick={()=>{ setMenuOpen(false); setActive("reserve"); }}><Phone size={16}/> Reserve number</Btn>
-            <Btn variant="outline" onClick={()=>{ setMenuOpen(false); setActive("tx"); }}><History size={16}/> Transactions</Btn>
             <Btn variant="outline" onClick={()=>{ setMenuOpen(false); setActive("profile"); }}><User size={16}/> Profile</Btn>
             <Btn variant="outline" onClick={()=>{ setMenuOpen(false); setActive("terms"); }}><Shield size={16}/> Terms</Btn>
             <Btn variant="outline" onClick={()=>{ setMenuOpen(false); setActive("support"); }}><HelpCircle size={16}/> Support</Btn>
-            <Btn variant="outline" onClick={async()=>{ await signOut(); setMenuOpen(false); setActive("landing"); }}><LogOut size={16}/> Log out</Btn>
+            <Btn variant="outline" onClick={async ()=>{ await supabase.auth.signOut(); setMenuOpen(false); setActive("landing"); }}><LogOut size={16}/> Log out</Btn>
           </>
         ) : (
           <>
@@ -863,7 +794,6 @@ export default function DialProPreview() {
       {active === "home" && session && <Home />}
       {active === "otp" && <OtpFlow />}
       {active === "reserve" && <Reserve />}
-      {active === "tx" && <Tx />}
       {active === "profile" && <Profile />}
       {active === "support" && <Support />}
       {active === "terms" && <Terms />}

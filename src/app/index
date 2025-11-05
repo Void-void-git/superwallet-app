@@ -1,0 +1,5 @@
+// src/pages/index.js
+
+import DialProPreview from "../app/page";
+
+export default DialProPreview;
